@@ -55,7 +55,7 @@
         #file-input { display: none; }
 
         .copy-box { background: #fff; padding: 1rem; border: 2px dashed #cbd5e1; border-radius: 0.8rem; font-family: monospace; font-size: 0.85rem; cursor: pointer; word-break: break-all; color: var(--primary); font-weight: 600; text-align: center; }
-        .system-msg { align-self: center; background: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; border-radius: 2rem; padding: 4px 12px; }
+        .system-msg { align-self: center; background: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; border-radius: 2rem; padding: 4px 12px; margin: 5px 0; }
         
         .file-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-top: 5px; background: #f1f5f9; min-width: 200px; }
         .progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 5px 0; }
@@ -72,7 +72,7 @@
 
     <div id="link-view" class="view">
         <h1>Invite Your Circle</h1>
-        <p>Share this link. GitHub Pages requires HTTPS for P2P functionality.</p>
+        <p>Copy this link and send it to your friends. They will join your private mesh network.</p>
         <div id="share-link" class="copy-box" onclick="copyToClipboard()">Generating...</div>
         <button onclick="shareLink()">Share Link</button>
         <button style="background:#e2e8f0; color:#1e293b;" onclick="goToNamePrompt()">Enter Room</button>
@@ -91,7 +91,7 @@
                     <span id="status-dot" class="status-dot"></span>
                     <span>shyChat Room</span>
                 </div>
-                <div class="user-count" id="user-count-display">1 participant</div>
+                <div class="user-count" id="user-count-display">Establishing...</div>
             </header>
             <div id="messages"></div>
             <div id="input-area">
@@ -107,19 +107,25 @@
 
     <script>
         const CHUNK_SIZE = 16384; 
-        let peer = null;
-        let hostPeer = null;
+        let myPeer = null;
         let connections = {};
         let myName = "Anonymous";
         let roomId = ""; 
         let fileTransferStates = {};
         let processedMessageIds = new Set();
 
-        const iceConfig = {
-            'iceServers': [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+        // Standard STUN servers to help navigate firewalls
+        const peerConfig = {
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            },
+            debug: 2
         };
 
         window.onload = () => {
@@ -137,7 +143,7 @@
         }
 
         function startNewChat() {
-            roomId = "shy-" + Math.random().toString(36).substring(2, 10);
+            roomId = "shy-" + Math.random().toString(36).substring(2, 12);
             const chatLink = window.location.origin + window.location.pathname + '?chat=' + roomId;
             document.getElementById('share-link').innerText = chatLink;
             switchView('link-view');
@@ -167,38 +173,55 @@
             document.getElementById('join-btn').disabled = true;
             document.getElementById('join-btn').innerText = "Connecting...";
 
-            peer = new Peer(null, { config: iceConfig, debug: 1 });
+            // Strategy: 
+            // 1. Try to become the 'Host' of the roomId.
+            // 2. If roomId is taken, we are a 'Peer', connect to roomId (the host).
+            
+            myPeer = new Peer(roomId, peerConfig);
 
-            peer.on('open', (myUniqueId) => {
-                switchView('chat-view');
-                document.getElementById('chat-view').classList.add('active');
-                
-                const conn = peer.connect(roomId, { reliable: true });
-                setupConnection(conn);
-                setupHostCapabilities();
+            myPeer.on('open', (id) => {
+                console.log("I am the Host:", id);
+                enterChat();
+                addMessage('System', 'You created the room. Waiting for others...', 'system-msg');
             });
 
-            peer.on('error', (err) => {
-                addMessage('System', `Connection Error: ${err.type}`, 'system-msg');
+            myPeer.on('error', (err) => {
+                if (err.type === 'unavailable-id') {
+                    // Room already has a host, so join as a normal peer
+                    myPeer.destroy();
+                    joinAsPeer();
+                } else {
+                    console.error("PeerJS Error:", err);
+                    addMessage('System', `Error: ${err.type}`, 'system-msg');
+                }
             });
+
+            myPeer.on('connection', setupConnection);
         }
 
-        function setupHostCapabilities() {
-            hostPeer = new Peer(roomId, { config: iceConfig });
-            hostPeer.on('open', () => {
-                addMessage('System', 'You are the room host.', 'system-msg');
-            });
-            hostPeer.on('connection', (conn) => {
+        function joinAsPeer() {
+            myPeer = new Peer(null, peerConfig); // Random ID for us
+            myPeer.on('open', (myId) => {
+                console.log("I am a Peer:", myId);
+                enterChat();
+                const conn = myPeer.connect(roomId, { reliable: true });
                 setupConnection(conn);
             });
-            hostPeer.on('error', (err) => {
-                if (err.type === 'unavailable-id') console.log("Joined existing mesh.");
-            });
+            myPeer.on('connection', setupConnection);
+        }
+
+        function enterChat() {
+            switchView('chat-view');
+            document.getElementById('chat-view').classList.add('active');
+            updateUIState();
         }
 
         function setupConnection(conn) {
             conn.on('open', () => {
+                console.log("Connected to:", conn.peer);
                 connections[conn.peer] = { conn, name: "Connecting..." };
+                
+                // Handshake
                 conn.send({ 
                     type: 'handshake', 
                     name: myName, 
@@ -208,9 +231,11 @@
             });
 
             conn.on('data', (data) => {
+                // Deduplicate messages across mesh
                 if (data.msgId) {
                     if (processedMessageIds.has(data.msgId)) return;
                     processedMessageIds.add(data.msgId);
+                    // Relay to other peers
                     broadcast(data, [conn.peer]); 
                 }
 
@@ -219,13 +244,14 @@
                 } else if (data.type === 'handshake') {
                     const isNew = !connections[conn.peer] || connections[conn.peer].name === "Connecting...";
                     connections[conn.peer].name = data.name;
-                    if (isNew) addMessage('System', `${data.name} joined.`, 'system-msg');
+                    if (isNew) addMessage('System', `${data.name} joined the mesh.`, 'system-msg');
                     updateUIState();
                     
+                    // Connect to peers shared by the host/peer (Mesh Networking)
                     if (data.peers) {
                         data.peers.forEach(pId => {
-                            if (pId !== peer.id && pId !== roomId && !connections[pId]) {
-                                const nextConn = peer.connect(pId, { reliable: true });
+                            if (pId !== myPeer.id && !connections[pId]) {
+                                const nextConn = myPeer.connect(pId, { reliable: true });
                                 setupConnection(nextConn);
                             }
                         });
@@ -237,20 +263,24 @@
                 }
             });
 
-            conn.on('close', () => {
-                if (connections[conn.peer]) {
-                    const name = connections[conn.peer].name;
-                    delete connections[conn.peer];
-                    addMessage('System', `${name} left.`, 'system-msg');
-                    updateUIState();
-                }
-            });
+            conn.on('close', () => removeConnection(conn.peer));
+            conn.on('error', () => removeConnection(conn.peer));
+        }
+
+        function removeConnection(peerId) {
+            if (connections[peerId]) {
+                const name = connections[peerId].name;
+                delete connections[peerId];
+                addMessage('System', `${name} disconnected.`, 'system-msg');
+                updateUIState();
+            }
         }
 
         function updateUIState() {
-            const count = Object.values(connections).filter(c => c.name !== "Connecting...").length + 1;
-            document.getElementById('user-count-display').innerText = `${count} participant${count !== 1 ? 's' : ''}`;
-            document.getElementById('status-dot').classList.add('status-online');
+            const activePeers = Object.values(connections).filter(c => c.name !== "Connecting...");
+            const count = activePeers.length + 1;
+            document.getElementById('user-count-display').innerText = `${count} participant${count !== 1 ? 's' : ''} online`;
+            document.getElementById('status-dot').className = 'status-dot status-online';
         }
 
         function sendMessage() {
@@ -267,7 +297,9 @@
 
         function broadcast(data, exclude = []) {
             Object.values(connections).forEach(c => {
-                if (c.conn.open && !exclude.includes(c.conn.peer)) c.conn.send(data);
+                if (c.conn.open && !exclude.includes(c.conn.peer)) {
+                    c.conn.send(data);
+                }
             });
         }
 
