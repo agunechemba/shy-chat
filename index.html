@@ -13,6 +13,7 @@
             --text: #1e293b; 
             --success: #10b981; 
             --panel: #ffffff;
+            --error: #ef4444;
         }
         
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, system-ui, sans-serif; }
@@ -47,35 +48,31 @@
         .message.own { background: var(--primary); color: white; align-self: flex-end; }
         .msg-sender { font-size: 0.75rem; margin-bottom: 4px; font-weight: 700; opacity: 0.8; }
         
-        .file-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-top: 5px; background: #f1f5f9; color: var(--text); display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
-        .own .file-card { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: white; }
-        .progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
-        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
-        .own .progress-fill { background: white; }
-
         #input-area { padding: 1rem; display: flex; gap: 0.75rem; border-top: 1px solid #f1f5f9; align-items: center; background: white; }
-        #msg-input { flex: 1; border: 1px solid #e2e8f0; padding: 0.75rem; border-radius: 0.5rem; outline: none; transition: border 0.2s; }
-        #msg-input:focus { border-color: var(--primary); }
+        #msg-input { flex: 1; border: 1px solid #e2e8f0; padding: 0.75rem; border-radius: 0.5rem; outline: none; }
         
-        .file-label { cursor: pointer; padding: 8px; border-radius: 50%; transition: background 0.2s; display: flex; align-items: center; justify-content: center; color: #64748b; }
-        .file-label:hover { background: #f1f5f9; color: var(--primary); }
+        .file-label { cursor: pointer; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #64748b; }
         #file-input { display: none; }
 
         .copy-box { background: #fff; padding: 1rem; border: 2px dashed #cbd5e1; border-radius: 0.8rem; font-family: monospace; font-size: 0.85rem; cursor: pointer; word-break: break-all; color: var(--primary); font-weight: 600; text-align: center; }
-        .system-msg { align-self: center; background: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; border-radius: 2rem; padding: 4px 12px; box-shadow: none; }
+        .system-msg { align-self: center; background: #e2e8f0; color: #475569; font-size: 0.75rem; font-weight: 600; border-radius: 2rem; padding: 4px 12px; }
+        
+        .file-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; margin-top: 5px; background: #f1f5f9; min-width: 200px; }
+        .progress-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 5px 0; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
     </style>
 </head>
 <body>
 
     <div id="home-view" class="view active">
         <h1>shyChat</h1>
-        <p>Private, serverless group messaging.<br>Your identity is yours to keep.</p>
+        <p>Private, serverless group messaging.<br>Created by Agunechemba Ekene.</p>
         <button onclick="startNewChat()">Create Secure Room</button>
     </div>
 
     <div id="link-view" class="view">
         <h1>Invite Your Circle</h1>
-        <p>Share this link. Anyone with the URL joins your mesh network instantly.</p>
+        <p>Share this link. GitHub Pages requires HTTPS for P2P functionality.</p>
         <div id="share-link" class="copy-box" onclick="copyToClipboard()">Generating...</div>
         <button onclick="shareLink()">Share Link</button>
         <button style="background:#e2e8f0; color:#1e293b;" onclick="goToNamePrompt()">Enter Room</button>
@@ -83,8 +80,8 @@
 
     <div id="name-view" class="view">
         <h1>Choose a handle</h1>
-        <input type="text" id="pseudonym-input" placeholder="Display name (e.g. Ghost)..." maxlength="20">
-        <button onclick="joinChat()">Join shyChat</button>
+        <input type="text" id="pseudonym-input" placeholder="Display name..." maxlength="20">
+        <button id="join-btn" onclick="joinChat()">Join shyChat</button>
     </div>
 
     <div id="chat-view">
@@ -96,12 +93,10 @@
                 </div>
                 <div class="user-count" id="user-count-display">1 participant</div>
             </header>
-
             <div id="messages"></div>
-
             <div id="input-area">
-                <label for="file-input" class="file-label" title="Share File">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                <label for="file-input" class="file-label">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
                 </label>
                 <input type="file" id="file-input" onchange="handleFileSelect(event)">
                 <input type="text" id="msg-input" placeholder="Say something..." autocomplete="off">
@@ -113,38 +108,36 @@
     <script>
         const CHUNK_SIZE = 16384; 
         let peer = null;
+        let hostPeer = null;
         let connections = {};
         let myName = "Anonymous";
-        let roomId = "";
+        let roomId = ""; 
         let fileTransferStates = {};
         let processedMessageIds = new Set();
 
-        const peerConfig = {
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
-                ]
-            }
+        const iceConfig = {
+            'iceServers': [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
         };
 
         window.onload = () => {
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('chat')) {
-                roomId = urlParams.get('chat');
+            const chatParam = urlParams.get('chat');
+            if (chatParam) {
+                roomId = chatParam;
                 switchView('name-view');
             }
         };
 
         function switchView(id) {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-            const el = document.getElementById(id);
-            if(el) el.classList.add('active');
+            document.getElementById(id).classList.add('active');
         }
 
         function startNewChat() {
-            roomId = "shy-" + Math.random().toString(36).substring(2, 12);
+            roomId = "shy-" + Math.random().toString(36).substring(2, 10);
             const chatLink = window.location.origin + window.location.pathname + '?chat=' + roomId;
             document.getElementById('share-link').innerText = chatLink;
             switchView('link-view');
@@ -154,8 +147,9 @@
             const link = document.getElementById('share-link').innerText;
             navigator.clipboard.writeText(link).then(() => {
                 const box = document.getElementById('share-link');
+                const oldText = box.innerText;
                 box.innerText = "Link Copied!";
-                setTimeout(() => box.innerText = link, 2000);
+                setTimeout(() => box.innerText = oldText, 2000);
             });
         }
 
@@ -170,30 +164,36 @@
         function joinChat() {
             const inputName = document.getElementById('pseudonym-input').value.trim();
             myName = inputName || "User_" + Math.floor(Math.random()*1000);
-            
-            switchView('chat-view');
-            document.getElementById('chat-view').classList.add('active');
+            document.getElementById('join-btn').disabled = true;
+            document.getElementById('join-btn').innerText = "Connecting...";
 
-            peer = new Peer(roomId, peerConfig);
+            peer = new Peer(null, { config: iceConfig, debug: 1 });
 
-            peer.on('open', (id) => {
-                updateUIState();
-                addMessage('System', `Created shyChat room.`, 'system-msg');
+            peer.on('open', (myUniqueId) => {
+                switchView('chat-view');
+                document.getElementById('chat-view').classList.add('active');
+                
+                const conn = peer.connect(roomId, { reliable: true });
+                setupConnection(conn);
+                setupHostCapabilities();
             });
 
             peer.on('error', (err) => {
-                if (err.type === 'unavailable-id') {
-                    peer.destroy();
-                    peer = new Peer(null, peerConfig); 
-                    peer.on('open', (myId) => {
-                        const conn = peer.connect(roomId, { reliable: true });
-                        setupConnection(conn);
-                    });
-                }
+                addMessage('System', `Connection Error: ${err.type}`, 'system-msg');
             });
+        }
 
-            peer.on('connection', setupConnection);
-            peer.on('disconnected', () => peer.reconnect());
+        function setupHostCapabilities() {
+            hostPeer = new Peer(roomId, { config: iceConfig });
+            hostPeer.on('open', () => {
+                addMessage('System', 'You are the room host.', 'system-msg');
+            });
+            hostPeer.on('connection', (conn) => {
+                setupConnection(conn);
+            });
+            hostPeer.on('error', (err) => {
+                if (err.type === 'unavailable-id') console.log("Joined existing mesh.");
+            });
         }
 
         function setupConnection(conn) {
@@ -217,20 +217,21 @@
                 if (data.type === 'chat') {
                     addMessage(data.user, data.text);
                 } else if (data.type === 'handshake') {
-                    const isNewMember = !connections[conn.peer] || connections[conn.peer].name === "Connecting...";
+                    const isNew = !connections[conn.peer] || connections[conn.peer].name === "Connecting...";
                     connections[conn.peer].name = data.name;
-                    if (isNewMember) addMessage('System', `${data.name} joined.`, 'system-msg');
+                    if (isNew) addMessage('System', `${data.name} joined.`, 'system-msg');
                     updateUIState();
+                    
                     if (data.peers) {
                         data.peers.forEach(pId => {
-                            if (pId !== peer.id && !connections[pId]) {
-                                const newConn = peer.connect(pId, { reliable: true });
-                                setupConnection(newConn);
+                            if (pId !== peer.id && pId !== roomId && !connections[pId]) {
+                                const nextConn = peer.connect(pId, { reliable: true });
+                                setupConnection(nextConn);
                             }
                         });
                     }
                 } else if (data.type === 'file-start') {
-                    handleFileStart(data, conn.peer);
+                    handleFileStart(data);
                 } else if (data.type === 'file-chunk') {
                     handleFileChunk(data);
                 }
@@ -240,41 +241,25 @@
                 if (connections[conn.peer]) {
                     const name = connections[conn.peer].name;
                     delete connections[conn.peer];
-                    updateUIState();
                     addMessage('System', `${name} left.`, 'system-msg');
+                    updateUIState();
                 }
-            });
-            
-            conn.on('error', () => {
-                delete connections[conn.peer];
-                updateUIState();
             });
         }
 
         function updateUIState() {
-            const activePeers = Object.values(connections).filter(c => c.name !== "Connecting...");
-            const count = activePeers.length + 1;
-            const display = document.getElementById('user-count-display');
-            if (display) display.innerText = `${count} participant${count !== 1 ? 's' : ''}`;
-            const dot = document.getElementById('status-dot');
-            if (dot) dot.className = 'status-dot status-online';
+            const count = Object.values(connections).filter(c => c.name !== "Connecting...").length + 1;
+            document.getElementById('user-count-display').innerText = `${count} participant${count !== 1 ? 's' : ''}`;
+            document.getElementById('status-dot').classList.add('status-online');
         }
 
         function sendMessage() {
             const input = document.getElementById('msg-input');
             const text = input.value.trim();
             if (!text) return;
-
-            const msgId = 'm-' + Date.now() + '-' + Math.random().toString(36).substring(7);
+            const msgId = 'm-' + Date.now() + Math.random().toString(36).substr(2,5);
             processedMessageIds.add(msgId);
-
-            const payload = { 
-                type: 'chat', 
-                user: myName, 
-                text: text, 
-                msgId: msgId 
-            };
-
+            const payload = { type: 'chat', user: myName, text, msgId };
             broadcast(payload);
             addMessage('You', text, 'own');
             input.value = '';
@@ -282,41 +267,30 @@
 
         function broadcast(data, exclude = []) {
             Object.values(connections).forEach(c => {
-                if (c.conn && c.conn.open && !exclude.includes(c.conn.peer)) {
-                    c.conn.send(data);
-                }
+                if (c.conn.open && !exclude.includes(c.conn.peer)) c.conn.send(data);
             });
         }
 
-        function addMessage(user, text, className = '', fileData = null) {
+        function addMessage(user, text, className = '', fileId = null) {
             const container = document.getElementById('messages');
-            if (!container) return;
-            
             const div = document.createElement('div');
             div.className = `message ${className}`;
-            
             if (className !== 'system-msg') {
                 const s = document.createElement('div');
                 s.className = 'msg-sender';
                 s.innerText = user;
                 div.appendChild(s);
             }
-
             const t = document.createElement('div');
             t.innerText = text;
             div.appendChild(t);
-
-            if (fileData) {
+            if (fileId) {
                 const card = document.createElement('div');
                 card.className = 'file-card';
-                card.id = `file-${fileData.id}`;
-                card.innerHTML = `
-                    <div style="font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis;">📁 ${fileData.name}</div>
-                    <div class="progress-bar"><div class="progress-fill" id="progress-${fileData.id}"></div></div>
-                `;
+                card.id = `file-${fileId}`;
+                card.innerHTML = `<div class="progress-bar"><div class="progress-fill" id="progress-${fileId}"></div></div>`;
                 div.appendChild(card);
             }
-            
             container.appendChild(div);
             container.scrollTop = container.scrollHeight;
         }
@@ -324,57 +298,47 @@
         async function handleFileSelect(e) {
             const file = e.target.files[0];
             if (!file) return;
-            const fileId = 'f-' + Math.random().toString(36).substring(7);
-            addMessage('You', 'Sending file...', 'own', { id: fileId, name: file.name });
+            const fileId = 'f-' + Math.random().toString(36).substr(2,5);
+            addMessage('You', `Sending ${file.name}...`, 'own', fileId);
             const reader = new FileReader();
-            reader.onload = async (event) => {
-                const buffer = event.target.result;
-                const startMsgId = 'm-' + Math.random().toString(36).substring(7);
-                processedMessageIds.add(startMsgId);
-                broadcast({ 
-                    type: 'file-start', id: fileId, name: file.name, size: file.size, 
-                    totalChunks: Math.ceil(file.size / CHUNK_SIZE), sender: myName, msgId: startMsgId
-                });
+            reader.onload = async (ev) => {
+                const buffer = ev.target.result;
+                const msgId = 'fm-' + fileId;
+                processedMessageIds.add(msgId);
+                broadcast({ type: 'file-start', id: fileId, name: file.name, size: file.size, sender: myName, msgId });
                 for (let i = 0; i < buffer.byteLength; i += CHUNK_SIZE) {
                     const chunk = buffer.slice(i, i + CHUNK_SIZE);
-                    broadcast({ type: 'file-chunk', id: fileId, chunk: chunk, index: i });
-                    updateProgressBar(fileId, Math.round((i / file.size) * 100));
-                    if (i % (CHUNK_SIZE * 5) === 0) await new Promise(r => setTimeout(r, 5));
+                    broadcast({ type: 'file-chunk', id: fileId, chunk, index: i });
+                    const fill = document.getElementById(`progress-${fileId}`);
+                    if (fill) fill.style.width = Math.round((i/file.size)*100) + '%';
+                    if (i % (CHUNK_SIZE*5) === 0) await new Promise(r => setTimeout(r, 1));
                 }
-                updateProgressBar(fileId, 100);
+                const fill = document.getElementById(`progress-${fileId}`);
+                if (fill) fill.style.width = '100%';
             };
             reader.readAsArrayBuffer(file);
         }
 
-        function handleFileStart(data, peerId) {
+        function handleFileStart(data) {
             if (fileTransferStates[data.id]) return;
-            fileTransferStates[data.id] = { name: data.name, size: data.size, chunks: [], receivedBytes: 0 };
-            addMessage(data.sender, 'Shared a file', '', { id: data.id, name: data.name });
+            fileTransferStates[data.id] = { name: data.name, size: data.size, chunks: [], received: 0 };
+            addMessage(data.sender, `Shared ${data.name}`, '', data.id);
         }
 
         function handleFileChunk(data) {
-            const state = fileTransferStates[data.id];
-            if (!state || state.chunks.some(c => c.index === data.index)) return;
-            state.chunks.push({ index: data.index, data: data.chunk });
-            state.receivedBytes += data.chunk.byteLength;
-            updateProgressBar(data.id, Math.round((state.receivedBytes / state.size) * 100));
-            if (state.receivedBytes >= state.size) {
-                state.chunks.sort((a, b) => a.index - b.index);
-                const blob = new Blob(state.chunks.map(c => c.data));
-                const url = URL.createObjectURL(blob);
+            const s = fileTransferStates[data.id];
+            if (!s || s.chunks.some(c => c.index === data.index)) return;
+            s.chunks.push({ index: data.index, data: data.chunk });
+            s.received += data.chunk.byteLength;
+            const fill = document.getElementById(`progress-${data.id}`);
+            if (fill) fill.style.width = Math.round((s.received/s.size)*100) + '%';
+            if (s.received >= s.size) {
+                s.chunks.sort((a,b) => a.index - b.index);
+                const url = URL.createObjectURL(new Blob(s.chunks.map(c => c.data)));
                 const card = document.getElementById(`file-${data.id}`);
-                const link = document.createElement('button');
-                link.innerText = "Download File";
-                link.style.width = "100%"; link.style.marginTop = "10px"; link.style.padding = "5px";
-                link.onclick = () => { const a = document.createElement('a'); a.href = url; a.download = state.name; a.click(); };
-                card.appendChild(link);
+                card.innerHTML = `<button onclick="window.open('${url}')" style="width:100%; font-size:0.7rem;">Download File</button>`;
                 delete fileTransferStates[data.id];
             }
-        }
-
-        function updateProgressBar(id, percent) {
-            const fill = document.getElementById(`progress-${id}`);
-            if (fill) fill.style.width = percent + '%';
         }
 
         document.getElementById('msg-input').onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
