@@ -72,7 +72,7 @@
 
     <div id="link-view" class="view">
         <h1>Invite Your Circle</h1>
-        <p>Copy this link and send it to your friends. They will join your private mesh network.</p>
+        <p>Share this link. GitHub Pages works best over HTTPS.</p>
         <div id="share-link" class="copy-box" onclick="copyToClipboard()">Generating...</div>
         <button onclick="shareLink()">Share Link</button>
         <button style="background:#e2e8f0; color:#1e293b;" onclick="goToNamePrompt()">Enter Room</button>
@@ -91,7 +91,7 @@
                     <span id="status-dot" class="status-dot"></span>
                     <span>shyChat Room</span>
                 </div>
-                <div class="user-count" id="user-count-display">Establishing...</div>
+                <div class="user-count" id="user-count-display">Initializing P2P...</div>
             </header>
             <div id="messages"></div>
             <div id="input-area">
@@ -111,21 +111,22 @@
         let connections = {};
         let myName = "Anonymous";
         let roomId = ""; 
-        let fileTransferStates = {};
         let processedMessageIds = new Set();
+        let fileTransferStates = {};
 
-        // Standard STUN servers to help navigate firewalls
-        const peerConfig = {
+        // Aggressive ICE Configuration
+        const peerOptions = {
             config: {
-                'iceServers': [
+                iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:stun2.l.google.com:19302' },
                     { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' }
-                ]
+                    { urls: 'stun:stun4.l.google.com:19302' },
+                ],
+                iceCandidatePoolSize: 10
             },
-            debug: 2
+            debug: 1
         };
 
         window.onload = () => {
@@ -143,7 +144,7 @@
         }
 
         function startNewChat() {
-            roomId = "shy-" + Math.random().toString(36).substring(2, 12);
+            roomId = "shychat-" + Math.random().toString(36).substring(2, 15);
             const chatLink = window.location.origin + window.location.pathname + '?chat=' + roomId;
             document.getElementById('share-link').innerText = chatLink;
             switchView('link-view');
@@ -153,15 +154,14 @@
             const link = document.getElementById('share-link').innerText;
             navigator.clipboard.writeText(link).then(() => {
                 const box = document.getElementById('share-link');
-                const oldText = box.innerText;
                 box.innerText = "Link Copied!";
-                setTimeout(() => box.innerText = oldText, 2000);
+                setTimeout(() => box.innerText = link, 2000);
             });
         }
 
         async function shareLink() {
             const url = document.getElementById('share-link').innerText;
-            if (navigator.share) await navigator.share({ title: 'Join my shyChat', url });
+            if (navigator.share) await navigator.share({ title: 'Join shyChat', url });
             else copyToClipboard();
         }
 
@@ -169,42 +169,44 @@
 
         function joinChat() {
             const inputName = document.getElementById('pseudonym-input').value.trim();
-            myName = inputName || "User_" + Math.floor(Math.random()*1000);
+            myName = inputName || "Guest_" + Math.floor(Math.random()*1000);
             document.getElementById('join-btn').disabled = true;
             document.getElementById('join-btn').innerText = "Connecting...";
 
-            // Strategy: 
-            // 1. Try to become the 'Host' of the roomId.
-            // 2. If roomId is taken, we are a 'Peer', connect to roomId (the host).
-            
-            myPeer = new Peer(roomId, peerConfig);
+            // We attempt to own the Room ID first. If it's taken, PeerJS throws 'unavailable-id'
+            myPeer = new Peer(roomId, peerOptions);
 
             myPeer.on('open', (id) => {
-                console.log("I am the Host:", id);
+                console.log("Registered as Room Host:", id);
                 enterChat();
-                addMessage('System', 'You created the room. Waiting for others...', 'system-msg');
+                addMessage('System', 'Room created. Sharing link is required for others to join.', 'system-msg');
             });
 
             myPeer.on('error', (err) => {
                 if (err.type === 'unavailable-id') {
-                    // Room already has a host, so join as a normal peer
+                    // Host exists, join as a guest
                     myPeer.destroy();
-                    joinAsPeer();
+                    joinAsGuest();
                 } else {
-                    console.error("PeerJS Error:", err);
-                    addMessage('System', `Error: ${err.type}`, 'system-msg');
+                    console.error("PeerJS Error:", err.type);
+                    document.getElementById('join-btn').disabled = false;
+                    document.getElementById('join-btn').innerText = "Retry Join";
                 }
             });
 
             myPeer.on('connection', setupConnection);
         }
 
-        function joinAsPeer() {
-            myPeer = new Peer(null, peerConfig); // Random ID for us
-            myPeer.on('open', (myId) => {
-                console.log("I am a Peer:", myId);
+        function joinAsGuest() {
+            myPeer = new Peer(null, peerOptions);
+            myPeer.on('open', (id) => {
+                console.log("Registered as Guest:", id);
                 enterChat();
-                const conn = myPeer.connect(roomId, { reliable: true });
+                // Direct connection to the host
+                const conn = myPeer.connect(roomId, { 
+                    reliable: true,
+                    serialization: 'json'
+                });
                 setupConnection(conn);
             });
             myPeer.on('connection', setupConnection);
@@ -218,10 +220,9 @@
 
         function setupConnection(conn) {
             conn.on('open', () => {
-                console.log("Connected to:", conn.peer);
                 connections[conn.peer] = { conn, name: "Connecting..." };
                 
-                // Handshake
+                // Send our name and our known peers to help others bridge the mesh
                 conn.send({ 
                     type: 'handshake', 
                     name: myName, 
@@ -231,11 +232,10 @@
             });
 
             conn.on('data', (data) => {
-                // Deduplicate messages across mesh
                 if (data.msgId) {
                     if (processedMessageIds.has(data.msgId)) return;
                     processedMessageIds.add(data.msgId);
-                    // Relay to other peers
+                    // Relay to all other connected peers (Flood Fill / Mesh)
                     broadcast(data, [conn.peer]); 
                 }
 
@@ -244,13 +244,13 @@
                 } else if (data.type === 'handshake') {
                     const isNew = !connections[conn.peer] || connections[conn.peer].name === "Connecting...";
                     connections[conn.peer].name = data.name;
-                    if (isNew) addMessage('System', `${data.name} joined the mesh.`, 'system-msg');
+                    if (isNew) addMessage('System', `${data.name} connected.`, 'system-msg');
                     updateUIState();
                     
-                    // Connect to peers shared by the host/peer (Mesh Networking)
+                    // If the handshake includes other peers we don't know, connect to them
                     if (data.peers) {
                         data.peers.forEach(pId => {
-                            if (pId !== myPeer.id && !connections[pId]) {
+                            if (pId !== myPeer.id && pId !== roomId && !connections[pId]) {
                                 const nextConn = myPeer.connect(pId, { reliable: true });
                                 setupConnection(nextConn);
                             }
@@ -263,23 +263,22 @@
                 }
             });
 
-            conn.on('close', () => removeConnection(conn.peer));
-            conn.on('error', () => removeConnection(conn.peer));
+            conn.on('close', () => disconnect(conn.peer));
+            conn.on('error', () => disconnect(conn.peer));
         }
 
-        function removeConnection(peerId) {
+        function disconnect(peerId) {
             if (connections[peerId]) {
                 const name = connections[peerId].name;
                 delete connections[peerId];
-                addMessage('System', `${name} disconnected.`, 'system-msg');
+                addMessage('System', `${name} left.`, 'system-msg');
                 updateUIState();
             }
         }
 
         function updateUIState() {
-            const activePeers = Object.values(connections).filter(c => c.name !== "Connecting...");
-            const count = activePeers.length + 1;
-            document.getElementById('user-count-display').innerText = `${count} participant${count !== 1 ? 's' : ''} online`;
+            const count = Object.values(connections).filter(c => c.name !== "Connecting...").length + 1;
+            document.getElementById('user-count-display').innerText = `${count} User${count !== 1 ? 's' : ''} in Mesh`;
             document.getElementById('status-dot').className = 'status-dot status-online';
         }
 
@@ -287,7 +286,7 @@
             const input = document.getElementById('msg-input');
             const text = input.value.trim();
             if (!text) return;
-            const msgId = 'm-' + Date.now() + Math.random().toString(36).substr(2,5);
+            const msgId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
             processedMessageIds.add(msgId);
             const payload = { type: 'chat', user: myName, text, msgId };
             broadcast(payload);
@@ -327,6 +326,7 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        // File transfer methods
         async function handleFileSelect(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -343,7 +343,7 @@
                     broadcast({ type: 'file-chunk', id: fileId, chunk, index: i });
                     const fill = document.getElementById(`progress-${fileId}`);
                     if (fill) fill.style.width = Math.round((i/file.size)*100) + '%';
-                    if (i % (CHUNK_SIZE*5) === 0) await new Promise(r => setTimeout(r, 1));
+                    if (i % (CHUNK_SIZE*5) === 0) await new Promise(r => setTimeout(r, 2));
                 }
                 const fill = document.getElementById(`progress-${fileId}`);
                 if (fill) fill.style.width = '100%';
