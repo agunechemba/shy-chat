@@ -2,14 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f0f1a">
+  <meta name="description" content="Ephemeral private chat rooms.">
+  <meta name="color-scheme" content="dark">
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Icons -->
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+
+  <!-- iOS PWA -->
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="shy-chat">
+
   <title>shy-chat</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
+  <!-- Update banner -->
+  <div id="update-banner" class="update-banner" hidden>
+    <span>A new version is available.</span>
+    <div class="update-banner-actions">
+      <button id="update-btn" type="button">Refresh</button>
+      <button id="update-dismiss" type="button" aria-label="Dismiss">×</button>
+    </div>
+  </div>
+
   <!-- Join screen -->
   <div id="join-screen">
     <h1>shy-chat</h1>
@@ -18,6 +42,10 @@
     <input id="user-input" type="text" placeholder="Your name" maxlength="20"
            autocomplete="off">
     <button id="join-btn" type="button">Join</button>
+    <button id="install-btn" type="button" class="install-btn" hidden>Install app</button>
+    <p id="ios-hint" class="ios-hint" hidden>
+      Install: tap <b>Share</b> → <b>Add to Home Screen</b>
+    </p>
     <p id="join-error" class="error" hidden></p>
   </div>
 
