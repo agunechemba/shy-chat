@@ -19,6 +19,69 @@ let state = {
 };
 let lastSignature = '';
 
+// ── NOTIFICATIONS ───────────────────────────────────────
+const BASE_TITLE       = document.title;
+const seenMessages     = new Set();
+let   unreadCount      = 0;
+let   notificationsOn  = false;   // becomes true after the first render
+
+function requestNotificationPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'default') return;
+  try {
+    const r = Notification.requestPermission();
+    if (r && typeof r.catch === 'function') r.catch(function () {});
+  } catch (_) {}
+}
+
+async function notifyNewMessage(m) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!document.hidden) return;
+
+  const title    = 'shy-chat · ' + m.user;
+  const bodyText = m.text.length > 140 ? m.text.slice(0, 140) + '…' : m.text;
+  const opts     = {
+    body:      bodyText,
+    icon:      'icon-192.png',
+    badge:     'icon-192.png',
+    tag:       'shychat-' + state.room,
+    renotify:  true,
+  };
+
+  // Prefer the service worker (required on Android Chrome).
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && typeof reg.showNotification === 'function') {
+        await reg.showNotification(title, opts);
+        return;
+      }
+    }
+  } catch (_) {}
+
+  try { new Notification(title, opts); } catch (_) {}
+}
+
+function updateTitle() {
+  document.title = (unreadCount > 0 && document.hidden)
+    ? '(' + unreadCount + ') ' + BASE_TITLE
+    : BASE_TITLE;
+}
+
+function clearUnread() {
+  if (unreadCount !== 0 || document.title !== BASE_TITLE) {
+    unreadCount = 0;
+    updateTitle();
+  }
+}
+
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) clearUnread();
+  else updateTitle();
+});
+window.addEventListener('focus', clearUnread);
+
 // ── TRANSPORT: POST text/plain ──────────────────────────
 async function fetchRequest(payload) {
   const res = await fetch(API_URL, {
@@ -122,8 +185,6 @@ const updateDismiss = document.getElementById('update-dismiss');
 // ── Service worker registration ─────────────────────────
 let refreshing = false;
 
-// Only attach the reload-on-controller-change listener if there is
-// ALREADY a controller (i.e. this is an update, not first install).
 if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (refreshing) return;
@@ -134,13 +195,11 @@ if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').then((reg) => {
-    // Watch for a newly installed worker (i.e. an update).
     reg.addEventListener('updatefound', () => {
       const newWorker = reg.installing;
       if (!newWorker) return;
       newWorker.addEventListener('statechange', () => {
         if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-          // Update is ready — offer to reload.
           showUpdateBanner(newWorker);
         }
       });
@@ -184,7 +243,7 @@ window.addEventListener('appinstalled', () => {
   deferredPrompt = null;
 });
 
-// ── iOS install hint (Safari doesn't fire beforeinstallprompt) ──
+// ── iOS install hint ────────────────────────────────────
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
@@ -197,7 +256,6 @@ if (isIOS && !isStandalone()) {
   iosHint.hidden = false;
 }
 
-// Re-check visibility if display-mode changes (e.g. after install).
 window.matchMedia('(display-mode: standalone)').addEventListener?.('change', () => {
   if (isStandalone()) {
     installBtn.hidden = true;
@@ -224,6 +282,9 @@ async function doJoin(room, user) {
     return;
   }
 
+  // Ask for notification permission while still inside the user gesture.
+  requestNotificationPermission();
+
   state.room = room;
   state.user = user;
   joinBtn.disabled = true;
@@ -235,7 +296,14 @@ async function doJoin(room, user) {
     joinScreen.style.display = 'none';
     chatScreen.classList.add('active');
     roomLabel.textContent = 'Room: ' + room;
-    lastSignature = '';
+
+    // Reset message-tracking + notification state for the new room.
+    lastSignature      = '';
+    seenMessages.clear();
+    unreadCount        = 0;
+    notificationsOn    = false;
+    updateTitle();
+
     startPolling();
     startHeartbeat();
     await loadMessages();
@@ -265,6 +333,11 @@ leaveBtn.addEventListener('click', async () => {
   lastSignature = '';
   state.room = '';
   state.user = '';
+
+  seenMessages.clear();
+  unreadCount     = 0;
+  notificationsOn = false;
+  updateTitle();
 });
 
 // ── SEND ────────────────────────────────────────────────
@@ -313,6 +386,24 @@ function renderMessages(messages) {
   if (sig === lastSignature) return;
   lastSignature = sig;
 
+  // ── Detect new messages from other users ─────────────
+  let latestFromOther = null;
+  messages.forEach(function (m) {
+    const key = m.user + '|' + m.timestamp;
+    if (seenMessages.has(key)) return;
+    seenMessages.add(key);
+    if (notificationsOn && m.user !== state.user && document.hidden) {
+      unreadCount++;
+      latestFromOther = m;
+    }
+  });
+  if (notificationsOn) {
+    if (latestFromOther) notifyNewMessage(latestFromOther);
+    updateTitle();
+  }
+  notificationsOn = true;
+
+  // ── Render ───────────────────────────────────────────
   const frag = document.createDocumentFragment();
   messages.forEach(function (m) {
     const div = document.createElement('div');
@@ -359,8 +450,6 @@ window.addEventListener('beforeunload', function () {
 });
 
 // ── SESSION RESTORE ─────────────────────────────────────
-// If the page reloads (e.g. after an SW update) while the user was
-// in a room, silently rejoin so nothing is lost.
 (function restoreSession() {
   const r = sessionStorage.getItem('shychat.room');
   const u = sessionStorage.getItem('shychat.user');

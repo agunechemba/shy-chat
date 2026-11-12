@@ -4,7 +4,7 @@
 // ════════════════════════════════════════════════════════
 
 // ── BUMP THIS ON EVERY DEPLOY THAT CHANGES CACHED FILES ──
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME    = 'shychat-' + CACHE_VERSION;
 
 const APP_SHELL = [
@@ -17,13 +17,10 @@ const APP_SHELL = [
 ];
 
 // ── INSTALL ─────────────────────────────────────────────
-// First install auto-activates (no old SW to wait for).
-// On update, the new SW waits until the client sends SKIP_WAITING.
 self.addEventListener('install', (e) => {
   e.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
-      // Cache each URL individually so a missing PNG doesn't break install.
       await Promise.all(
         APP_SHELL.map((url) =>
           cache.add(url).catch((err) => {
@@ -55,18 +52,33 @@ self.addEventListener('message', (e) => {
   }
 });
 
+// ── NOTIFICATION CLICK ──────────────────────────────────
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      for (const c of all) {
+        if ('focus' in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('./');
+    })()
+  );
+});
+
 // ── FETCH ───────────────────────────────────────────────
 self.addEventListener('fetch', (e) => {
   const req = e.request;
 
-  // Only handle same-origin GETs. Everything else (API calls,
-  // POSTs, cross-origin) passes through untouched.
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // ── Navigation (HTML): network-first, cached fallback
+  // Navigation: network-first, cached fallback
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req)
@@ -88,7 +100,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // ── Assets: stale-while-revalidate
+  // Assets: stale-while-revalidate
   e.respondWith(
     (async () => {
       const cached = await caches.match(req);
